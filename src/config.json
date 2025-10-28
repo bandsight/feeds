@@ -1,0 +1,61 @@
+{
+  "feed_title": "Bandsight \u2013 Victorian Council Jobs Feed",
+  "feed_link": "https://bandsight.github.io/feeds/feed.xml",
+  "feed_description": "Automatically updated jobs feed by Bandsight.",
+  "max_items": 300,
+  "user_agent": "BandsightRSSBot/1.0 (+contact: feeds@bandsight.example)",
+  "request_timeout": 25,
+  "sleep_between_requests_seconds": 1,
+  "sources": [
+    {
+      "name": "Wyndham City \u2014 Jobs",
+      "url": "https://recruitment.wyndham.vic.gov.au/careers",
+      "strategy": "listing_only",
+      "selectors": {
+        "listing": {
+          "row": "table tr, .job-listing-row, article, li",
+          "title": "a",
+          "href_attr": "href",
+          "date": "td:contains('Post Date'), .post-date, time[datetime], .posted",
+          "summary": "td:nth-child(2), .summary, p"
+        }
+      }
+    },
+    {
+      "name": "City of Casey \u2014 Jobs",
+      "url": "https://www.casey.vic.gov.au/careers",
+      "strategy": "listing_plus_detail",
+      "selectors": {
+        "listing": {
+          "card": "article, .job-card, li",
+          "title": "a",
+          "href_attr": "href",
+          "date": ".date, time[datetime], .published",
+          "summary": "p, .summary"
+        },
+        "detail": {
+          "advertised": ".advertised, .field-advertised, .job-advertised, time[datetime]",
+          "jsonld": true
+        }
+      }
+    },
+    {
+      "name": "City of Greater Geelong \u2014 Jobs",
+      "url": "https://www.geelongaustralia.com.au/employment/default.aspx",
+      "strategy": "listing_plus_detail",
+      "selectors": {
+        "listing": {
+          "card": ".job-listing li, .listing-item, article, .search-result, li a[href]",
+          "title": "a",
+          "href_attr": "href",
+          "date": ".date, time[datetime], .posted, .closes",
+          "summary": "p, .summary"
+        },
+        "detail": {
+          "advertised": ".advertised, .field--name-field-advertised, .job__advertised, time[datetime]",
+          "jsonld": true
+        }
+      }
+    }
+  ]
+}
