@@ -1,2 +1,50 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0"><channel><title>Placeholder</title></channel></rss>
+<rss version="2.0">
+<channel>
+  <title>Bandsight – Victorian Council Jobs Feed</title>
+  <link>https://bandsight.github.io/feeds/feed.xml</link>
+  <description>Automatically updated jobs feed by Bandsight.</description>
+  <language>en-au</language>
+  <lastBuildDate>Tue, 28 Oct 2025 00:30:30 +0000</lastBuildDate>
+  <item>
+    <title>Site Map</title>
+    <link>https://recruitment.wyndham.vic.gov.au/careers/sitemap</link>
+    <guid isPermaLink="false">5686d5f4e38c0983c6e5701097e065c4a71bc8e5</guid>
+    <pubDate>Tue, 28 Oct 2025 00:30:30 +0000</pubDate>
+    <description>Wyndham City — Jobs</description>
+    <category>Wyndham City — Jobs</category>
+  </item>
+  <item>
+    <title>Help</title>
+    <link>https://recruitment.wyndham.vic.gov.au/careers/info/help</link>
+    <guid isPermaLink="false">70c0a9683c984e157e2f01b92c400aa10d792a85</guid>
+    <pubDate>Tue, 28 Oct 2025 00:30:30 +0000</pubDate>
+    <description>Wyndham City — Jobs</description>
+    <category>Wyndham City — Jobs</category>
+  </item>
+  <item>
+    <title>Opportunities</title>
+    <link>https://recruitment.wyndham.vic.gov.au/careers/</link>
+    <guid isPermaLink="false">d9b903ed6f0c2f33b8c837fae07462c49c26a68a</guid>
+    <pubDate>Tue, 28 Oct 2025 00:30:30 +0000</pubDate>
+    <description>Wyndham City — Jobs</description>
+    <category>Wyndham City — Jobs</category>
+  </item>
+  <item>
+    <title>Help</title>
+    <link>https://recruitment.wyndham.vic.gov.au/careers/info/help</link>
+    <guid isPermaLink="false">70c0a9683c984e157e2f01b92c400aa10d792a85</guid>
+    <pubDate>Tue, 28 Oct 2025 00:30:30 +0000</pubDate>
+    <description>Wyndham City — Jobs</description>
+    <category>Wyndham City — Jobs</category>
+  </item>
+  <item>
+    <title>Opportunities</title>
+    <link>https://recruitment.wyndham.vic.gov.au/careers/</link>
+    <guid isPermaLink="false">d9b903ed6f0c2f33b8c837fae07462c49c26a68a</guid>
+    <pubDate>Tue, 28 Oct 2025 00:30:30 +0000</pubDate>
+    <description>Wyndham City — Jobs</description>
+    <category>Wyndham City — Jobs</category>
+  </item>
+</channel>
+</rss>
