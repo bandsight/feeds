@@ -7,20 +7,20 @@
   "request_timeout": 25,
   "sleep_between_requests_seconds": 1,
   "sources": [
-    {
-      "name": "Wyndham City \u2014 Jobs",
-      "url": "https://recruitment.wyndham.vic.gov.au/careers",
-      "strategy": "listing_only",
-      "selectors": {
-        "listing": {
-          "row": "table tr, .job-listing-row, article, li",
-          "title": "a",
-          "href_attr": "href",
-          "date": "td:contains('Post Date'), .post-date, time[datetime], .posted",
-          "summary": "td:nth-child(2), .summary, p"
-        }
-      }
-    },
+{
+  "name": "Wyndham City — Jobs",
+  "url": "https://recruitment.wyndham.vic.gov.au/careers/",
+  "strategy": "listing_only",
+  "selectors": {
+    "listing": {
+      "row": "table.job-table tr a[href*='vacancy']",
+      "title": "a",
+      "href_attr": "href",
+      "date": "td:contains('Post Date'), .post-date, time[datetime], .posted",
+      "summary": "td:nth-child(2), .summary, p"
+    }
+  }
+},
     {
       "name": "City of Casey \u2014 Jobs",
       "url": "https://www.casey.vic.gov.au/careers",
