@@ -1,248 +1,261 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Bandsight Feed Scraper v4.1 – Wyndham historical with deeper crawl
-- Crawls main careers and /latest-jobs (with pagination)
-- Collects only real job detail links (/careers/jobs/...)
-- De-dupes and APPENDS to existing feed.xml (historical ledger)
+Bandsight Multi-Council Scraper v5.0 (Historical)
+- Crawls multiple councils within ~100 km of Ballarat
+- Vendor-aware collectors (Pulse, PageUp, ApplyNow, generic pages)
+- De-dupes by GUID (sha1(link)), APPENDS to docs/feed.xml (historical ledger)
+- Tags each <item> with <council> and tries to extract Band/Salary/Posted
 """
 
 import re, json, hashlib, requests, xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urljoin, urlparse, parse_qs
+from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from xml.sax.saxutils import escape
 
-START_URLS = [
-    "https://recruitment.wyndham.vic.gov.au/careers/",
-    "https://recruitment.wyndham.vic.gov.au/careers/latest-jobs",
-]
 OUT_FEED = Path("docs/feed.xml")
-CHANNEL_TITLE = "Bandsight – Wyndham Job Feed (Historical)"
-CHANNEL_LINK = "https://bandsight.github.io/feeds/feed.xml"
-CHANNEL_DESC = "Cumulative Wyndham City job feed with historical records."
-HEADERS = {"User-Agent": "BandsightRSSBot/4.1 (+contact: feeds@bandsight.example)"}
+CHANNEL_TITLE = "Bandsight – Central Vic Councils Job Feed (Historical)"
+CHANNEL_LINK  = "https://bandsight.github.io/feeds/feed.xml"
+CHANNEL_DESC  = "Cumulative jobs feed for councils within ~100 km of Ballarat."
+HEADERS = {"User-Agent": "BandsightRSSBot/5.0 (+contact: feeds@bandsight.example)"}
+TIMEOUT = 25
 
-# -------- basics
+# ---- Councils & start URLs (seeded from official careers endpoints)
+COUNCILS = [
+    {"name": "City of Ballarat", "starts": [
+        "https://ballarat.pulsesoftware.com/Pulse/jobs",    # Pulse listing
+        "https://www.ballarat.vic.gov.au/careers"          # site hub (fallback)
+    ], "vendor": "pulse"},
+    {"name": "Golden Plains Shire", "starts": [
+        "https://www.goldenplains.vic.gov.au/council/careers/vacancies"
+    ], "vendor": "generic"},
+    {"name": "Hepburn Shire", "starts": [
+        "https://www.hepburn.vic.gov.au/Council/Work-for-Council/Job-vacancies"
+    ], "vendor": "generic"},
+    {"name": "Moorabool Shire", "starts": [
+        "https://www.moorabool.vic.gov.au/About-Council/Careers/Vacancies"
+    ], "vendor": "generic"},
+    {"name": "Pyrenees Shire", "starts": [
+        "https://www.pyrenees.vic.gov.au/About-Pyrenees-Shire-Council/Work-For-Pyrenees-Shire-Council/Employment-Opportunities-with-Pyrenees-Shire-Council"
+    ], "vendor": "generic"},
+    {"name": "Central Goldfields Shire", "starts": [
+        "https://centralgoldfieldscareers.com.au/Vacancies/"
+    ], "vendor": "generic"},
+    {"name": "City of Greater Geelong", "starts": [
+        "https://careers.pageuppeople.com/887/cw/en/listing/"
+    ], "vendor": "pageup"},
+    {"name": "City of Melton", "starts": [
+        "https://meltoncity-vacancies.applynow.net.au/"
+    ], "vendor": "applynow"},
+    {"name": "Wyndham City", "starts": [
+        "https://recruitment.wyndham.vic.gov.au/careers/latest-jobs",
+        "https://recruitment.wyndham.vic.gov.au/careers/"
+    ], "vendor": "generic"},
+    # You can append Macedon Ranges / Mount Alexander easily: add {"name": "...", "starts": [...], "vendor": "generic"}
+]
 
-def sha1(s: str) -> str:
-    return hashlib.sha1(s.encode("utf-8")).hexdigest()
+# ---- helpers
+def sha1(s: str) -> str: return hashlib.sha1(s.encode("utf-8")).hexdigest()
+def now_rfc() -> str:     return datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
 
-def now_rfc() -> str:
-    return datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
-
-def fetch_html(url: str, timeout: int = 25) -> str:
-    r = requests.get(url, headers=HEADERS, timeout=timeout)
+def get(url: str) -> str:
+    r = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
     r.raise_for_status()
     return r.text
 
-# -------- existing feed loader
+def try_text(el) -> str:
+    return (el.get_text(" ", strip=True) if el else "").strip()
 
-def parse_existing_items():
-    if not OUT_FEED.exists():
-        return {}
+def parse_existing_guids() -> set[str]:
+    if not OUT_FEED.exists(): return set()
     try:
-        tree = ET.parse(OUT_FEED)
-        root = tree.getroot()
-        existing = {}
-        for item in root.findall(".//item"):
-            guid = item.findtext("guid")
-            if guid:
-                existing[guid.strip()] = True
-        print(f"[info] Loaded {len(existing)} existing items.")
-        return existing
-    except Exception as e:
-        print(f"[warn] Could not parse existing feed: {e}")
-        return {}
+        root = ET.parse(OUT_FEED).getroot()
+        return { (i.findtext("guid") or "").strip() for i in root.findall(".//item") if i.findtext("guid") }
+    except Exception:
+        return set()
 
-# -------- link collection
+# ---- vendor collectors → return list[(title, link)]
+RE_JOB_WORD = re.compile(r"(job|position|officer|engineer|planner|coordinator|manager)", re.I)
 
-RE_JOB_DETAIL = re.compile(r"/careers/jobs/", re.I)
-RE_NOISE_URL = re.compile(r"/careers/(?:info|sitemap)(?:/|$)", re.I)
-RE_LOCATION_ONLY = re.compile(r"/other-jobs-matching/location-only", re.I)
-RE_NOISE_TEXT = re.compile(r"\b(help|site\s*map|privacy|terms|accessibility|feedback)\b", re.I)
-
-def collect_from_page(url: str):
-    """Collect job detail links from a single page."""
-    html = fetch_html(url)
-    soup = BeautifulSoup(html, "html.parser")
-    links = []
+def collect_generic(start_url: str) -> list[tuple[str,str]]:
+    html = get(start_url); soup = BeautifulSoup(html, "html.parser")
+    picks = []
     for a in soup.find_all("a", href=True):
-        href = a["href"].strip()
-        text = (a.get_text(strip=True) or "").strip()
-        abs_link = urljoin(url, href)
+        href = a["href"].strip(); text = try_text(a)
+        link = urljoin(start_url, href)
+        if any(s in link for s in ["sitemap", "/info/", "/privacy", "accessibility"]): continue
+        if not RE_JOB_WORD.search(href) and not RE_JOB_WORD.search(text): continue
+        if "/other-jobs-matching/location-only" in link: continue
+        # Prefer deep job detail pages
+        if any(k in link for k in ["/jobs/", "/Vacancies/", "/vacancies/", "/employment/", "/careers/"]):
+            title = text or href.rsplit("/",1)[-1]
+            picks.append((title, link))
+    # de-dupe by link
+    seen=set(); out=[]
+    for t,u in picks:
+        if u in seen: continue
+        seen.add(u); out.append((t,u))
+    return out
 
-        if RE_NOISE_URL.search(abs_link) or RE_LOCATION_ONLY.search(abs_link):
-            continue
-        if RE_NOISE_TEXT.search(text):
-            continue
-        if not RE_JOB_DETAIL.search(abs_link):
-            continue  # keep only real job detail pages
-
-        title = text or href.rsplit("/", 1)[-1] or href
-        links.append((title, abs_link))
-    return links, soup
-
-def find_next_page(base_url: str, soup: BeautifulSoup) -> str | None:
-    """Find next page on latest-jobs (varies by vendor; handle common patterns)."""
-    # Try a rel=next link
-    rel_next = soup.find("a", attrs={"rel": "next"})
-    if rel_next and rel_next.get("href"):
-        return urljoin(base_url, rel_next["href"])
-
-    # Try anchors with 'Next' text
+def collect_pulse(listing_url: str) -> list[tuple[str,str]]:
+    # Pulse lists as table rows with links to /Pulse/job
+    html = get(listing_url); soup = BeautifulSoup(html, "html.parser")
+    picks=[]
     for a in soup.find_all("a", href=True):
-        t = (a.get_text(strip=True) or "").lower()
-        if "next" in t or "older" in t:
-            return urljoin(base_url, a["href"])
-
-    # Some sites use query params like ?startrow= or ?page=
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if "start" in href or "page=" in href:
-            return urljoin(base_url, href)
-
-    return None
-
-def collect_all_candidates() -> list[tuple[str, str]]:
-    """Crawl both start URLs and paginate latest-jobs a few pages."""
-    seen_urls = set()
-    picks: list[tuple[str, str]] = []
-
-    for start in START_URLS:
-        url = start
-        page_count = 0
-        max_pages = 10  # safety bound
-
-        while url and page_count < max_pages:
-            try:
-                found, soup = collect_from_page(url)
-                for t, u in found:
-                    if u not in seen_urls:
-                        seen_urls.add(u)
-                        picks.append((t, u))
-                page_count += 1
-                # Only paginate aggressively on /latest-jobs tree
-                if "/latest-jobs" in start:
-                    url = find_next_page(url, soup)
-                else:
-                    url = None  # just single page for the main careers landing
-            except Exception as e:
-                print(f"[warn] crawl error on {url}: {e}")
-                break
-
-    print(f"[info] Collected {len(picks)} job detail links.")
+        href=a["href"]; text=try_text(a)
+        link=urljoin(listing_url, href)
+        if "/Pulse/job" in link or "/Pulse/Job" in link:
+            title = text or href.rsplit("/",1)[-1]
+            picks.append((title, link))
     return picks
 
-# -------- enrichment (lightweight but useful)
+def collect_pageup(listing_url: str) -> list[tuple[str,str]]:
+    html=get(listing_url); soup=BeautifulSoup(html,"html.parser")
+    picks=[]
+    for a in soup.find_all("a", href=True):
+        href=a["href"]; text=try_text(a)
+        link=urljoin(listing_url, href)
+        # PageUp job detail often has /en/job/ or /en/listing/ → detail pages include /en/job/
+        if "/en/job/" in link:
+            title=text or href.rsplit("/",1)[-1]
+            picks.append((title, link))
+    return picks
 
-def enrich(link: str):
-    """Extract band, salary, posted date (best-effort)."""
-    meta = {"desc": "", "band": "", "salary": "", "posted": ""}
+def collect_applynow(listing_url: str) -> list[tuple[str,str]]:
+    html=get(listing_url); soup=BeautifulSoup(html,"html.parser")
+    picks=[]
+    for a in soup.select("a[href]"):
+        href=a["href"]; text=try_text(a)
+        link=urljoin(listing_url, href)
+        # ApplyNow uses /applynow/ or /apply/ or /register/ with jobId param; detail often contains '/applynow/'
+        if "applynow.net.au" in link and ("/applynow/" in link or "job" in link.lower()):
+            title=text or href.rsplit("/",1)[-1]
+            picks.append((title, link))
+    return picks
+
+VENDOR_COLLECTORS = {
+    "generic": collect_generic,
+    "pulse":   collect_pulse,
+    "pageup":  collect_pageup,
+    "applynow":collect_applynow,
+}
+
+# ---- enrichment (light)
+def enrich(link: str) -> dict:
+    meta = {"desc":"", "band":"", "salary":"", "posted":"", "closing":""}
     try:
-        html = fetch_html(link)
-        soup = BeautifulSoup(html, "html.parser")
+        html = get(link); soup = BeautifulSoup(html, "html.parser")
         text = soup.get_text(" ", strip=True)
 
         # Band
         m = re.search(r"\bBand\s*\d+\b", text, re.I)
         if m: meta["band"] = m.group(0)
 
-        # Salary (single 'from $X' or a range)
+        # Salary (from $X or range)
         m = re.search(r"(?:salary\s*(?:from|starting at)\s*)?(\$[\d,]+(?:\.\d{2})?)", text, re.I)
         if m: meta["salary"] = m.group(1)
         m2 = re.search(r"(\$[\d,]+(?:\.\d{2})?)\s*(?:–|-|to)\s*(\$[\d,]+(?:\.\d{2})?)", text)
         if m2: meta["salary"] = f"{m2.group(1)} – {m2.group(2)}"
 
-        # Posted/Advertised date or <time datetime>
-        time_tag = soup.find("time", attrs={"datetime": True})
-        if time_tag and time_tag.get("datetime"):
-            meta["posted"] = time_tag["datetime"]
+        # Posted / Advertised / <time datetime>
+        ttag = soup.find("time", attrs={"datetime": True})
+        if ttag and ttag.get("datetime"):
+            meta["posted"] = ttag["datetime"]
         else:
             m = re.search(r"(Advertised|Posted)\s*[:\-]?\s*(\d{1,2}\s+\w+\s+\d{4})", text, re.I)
-            if m:
-                meta["posted"] = m.group(2)  # leave as human date; PBI can parse
+            if m: meta["posted"] = m.group(2)
 
-        # Short description teaser
-        meta["desc"] = " ".join(text.split()[:60]) + "..."
+        # Closing date (nice-to-have)
+        m = re.search(r"(Close[s]?|Closing Date)\s*[:\-]?\s*(\d{1,2}\s+\w+\s+\d{4})", text, re.I)
+        if m: meta["closing"] = m.group(2)
+
+        # Short desc
+        meta["desc"] = " ".join(text.split()[:60]) + "…"
     except Exception as e:
-        print(f"[warn] enrich {link}: {e}")
+        print(f"[warn] enrich fail {link}: {e}")
     return meta
 
-# -------- append writer
-
-def write_appended_feed(new_items: list[tuple[str, str, str, dict]], existing_count: int):
-    """Append new <item> blocks to existing feed (or create fresh if none)."""
+# ---- feed writer (append)
+def write_appended(master_new: list[dict]):
     now = now_rfc()
-
     if not OUT_FEED.exists():
-        # fresh channel skeleton
         with open(OUT_FEED, "w", encoding="utf-8") as f:
-            f.write("<?xml version='1.0' encoding='UTF-8'?>\n")
-            f.write("<rss version='2.0'>\n<channel>\n")
-            f.write(f"<title>{escape(CHANNEL_TITLE)}</title>\n")
-            f.write(f"<link>{escape(CHANNEL_LINK)}</link>\n")
-            f.write(f"<description>{escape(CHANNEL_DESC)}</description>\n")
-            f.write("<language>en-au</language>\n")
+            f.write("<?xml version='1.0' encoding='UTF-8'?>\n<rss version='2.0'>\n<channel>\n")
+            f.write(f"<title>{escape(CHANNEL_TITLE)}</title>\n<link>{escape(CHANNEL_LINK)}</link>\n")
+            f.write(f"<description>{escape(CHANNEL_DESC)}</description>\n<language>en-au</language>\n")
             f.write(f"<lastBuildDate>{now}</lastBuildDate>\n")
-            for guid, title, link, meta in new_items:
-                f.write("  <item>\n")
-                f.write(f"    <title>{escape(title)}</title>\n")
-                f.write(f"    <link>{escape(link)}</link>\n")
-                f.write(f"    <guid isPermaLink='false'>{guid}</guid>\n")
-                f.write(f"    <pubDate>{escape(meta.get('posted') or now)}</pubDate>\n")
-                f.write(f"    <description>{escape(meta.get('desc',''))}</description>\n")
-                f.write(f"    <category>{escape(meta.get('band') or 'Wyndham City — Jobs')}</category>\n")
-                f.write(f"    <salary>{escape(meta.get('salary',''))}</salary>\n")
-                f.write("  </item>\n")
+            for it in master_new:
+                f.write(render_item(it, now))
             f.write("</channel>\n</rss>\n")
-        print(f"[done] Created new feed with {len(new_items)} items.")
+        print(f"[done] created feed.xml with {len(master_new)} items")
         return
 
-    # append to existing: snip tail, append, close again
-    txt = OUT_FEED.read_text(encoding="utf-8")
-    txt = re.sub(r"</channel>\s*</rss>\s*$", "", txt.strip(), flags=re.S)
+    txt = OUT_FEED.read_text(encoding="utf-8").strip()
+    txt = re.sub(r"</channel>\s*</rss>\s*$", "", txt, flags=re.S)
     with open(OUT_FEED, "w", encoding="utf-8") as f:
         f.write(txt + "\n")
-        # update lastBuildDate (optional, keep simple by adding a new one next to old)
-        # For simplicity, we won't try to replace; many readers ignore it.
-        for guid, title, link, meta in new_items:
-            f.write("  <item>\n")
-            f.write(f"    <title>{escape(title)}</title>\n")
-            f.write(f"    <link>{escape(link)}</link>\n")
-            f.write(f"    <guid isPermaLink='false'>{guid}</guid>\n")
-            f.write(f"    <pubDate>{escape(meta.get('posted') or now)}</pubDate>\n")
-            f.write(f"    <description>{escape(meta.get('desc',''))}</description>\n")
-            f.write(f"    <category>{escape(meta.get('band') or 'Wyndham City — Jobs')}</category>\n")
-            f.write(f"    <salary>{escape(meta.get('salary',''))}</salary>\n")
-            f.write("  </item>\n")
+        for it in master_new:
+            f.write(render_item(it, now))
         f.write("</channel>\n</rss>\n")
-    print(f"[done] Appended {len(new_items)} items. Total (approx): {existing_count + len(new_items)}")
+    print(f"[done] appended {len(master_new)} items")
 
-# -------- main
+def render_item(it: dict, now: str) -> str:
+    return (
+        "  <item>\n"
+        f"    <title>{escape(it['title'])}</title>\n"
+        f"    <link>{escape(it['link'])}</link>\n"
+        f"    <guid isPermaLink='false'>{it['guid']}</guid>\n"
+        f"    <pubDate>{escape(it.get('posted') or now)}</pubDate>\n"
+        f"    <description>{escape(it.get('desc',''))}</description>\n"
+        f"    <category>{escape(it.get('band') or it['council'] + ' — Jobs')}</category>\n"
+        f"    <salary>{escape(it.get('salary',''))}</salary>\n"
+        f"    <closing>{escape(it.get('closing',''))}</closing>\n"
+        f"    <council>{escape(it['council'])}</council>\n"
+        "  </item>\n"
+    )
 
+# ---- main
 def main():
-    existing = parse_existing_items()
-    seen = set(existing.keys())
+    seen = parse_existing_guids()
+    to_append = []
 
-    # crawl
-    candidates = collect_all_candidates()
-    print(f"[info] Considering {len(candidates)} links for enrichment…")
+    for c in COUNCILS:
+        vendor = c["vendor"]
+        collector = VENDOR_COLLECTORS.get(vendor, collect_generic)
+        collected=[]
+        for start in c["starts"]:
+            try:
+                collected.extend(collector(start))
+            except Exception as e:
+                print(f"[warn] {c['name']} start {start}: {e}")
+        # de-dupe within council
+        seen_links=set(); unique=[]
+        for t,u in collected:
+            if u in seen_links: continue
+            seen_links.add(u); unique.append((t,u))
 
-    new_items = []
-    for title, link in candidates:
-        guid = sha1(link)
-        if guid in seen:
-            continue
-        meta = enrich(link)
-        new_items.append((guid, title, link, meta))
+        for title, link in unique:
+            guid = sha1(link)
+            if guid in seen: 
+                continue
+            meta = enrich(link)
+            to_append.append({
+                "guid": guid,
+                "title": title or link.rsplit("/",1)[-1],
+                "link": link,
+                "posted": meta.get("posted",""),
+                "desc": meta.get("desc",""),
+                "band": meta.get("band",""),
+                "salary": meta.get("salary",""),
+                "closing": meta.get("closing",""),
+                "council": c["name"],
+            })
 
-    if not new_items:
-        print("[info] No new items to append.")
-        return
-
-    write_appended_feed(new_items, existing_count=len(seen))
+    if not to_append:
+        print("[info] nothing new to append"); return
+    write_appended(to_append)
 
 if __name__ == "__main__":
     main()
