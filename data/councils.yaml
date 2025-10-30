@@ -1,0 +1,31 @@
+# Master council registry — Version 1
+# Exclude: Borough of Queenscliffe, City of Melbourne
+version: 1
+councils:
+  - name: Wyndham City
+    lga_code: 361
+    vendor: generic
+    starts:
+      - https://recruitment.wyndham.vic.gov.au/careers/latest-jobs
+    active: true
+
+  - name: City of Greater Geelong
+    lga_code: 210
+    vendor: pageup
+    starts:
+      - https://careers.pageuppeople.com/887/cw/en/listing/
+    active: true
+
+  - name: Central Goldfields Shire
+    lga_code: 214
+    vendor: generic
+    starts:
+      - https://centralgoldfieldscareers.com.au/Vacancies/
+    active: true
+
+  - name: City of Ballarat
+    lga_code: 201
+    vendor: pulse
+    starts:
+      - https://ballarat.pulsesoftware.com/Pulse/jobs
+    active: true
