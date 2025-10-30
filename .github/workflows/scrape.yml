@@ -1,0 +1,31 @@
+name: Build RSS
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "15 20 * * *"  # 7:15 AM AEDT daily
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install beautifulsoup4 requests pyyaml
+
+      - name: Run scraper
+        run: python src/scraper.py
+
+      - name: Commit updated feeds
+        run: |
+          git config user.name "bandsight-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/feed.xml || true
+          git commit -m "chore: update feeds [skip ci]" || echo "nothing to commit"
+          git push
