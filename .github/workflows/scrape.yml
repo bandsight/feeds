@@ -3,12 +3,13 @@ name: Scrape council jobs
 on:
   workflow_dispatch: {}
   schedule:
-    # Every 6 hours. CRON uses UTC (AUS/Melbourne is UTC+11 on Oct 31, 2025).
     - cron: "0 */6 * * *"
 
 permissions:
   contents: write
   actions: read
+  pages: write            # ← ADD
+  id-token: write         # ← ADD
 
 concurrency:
   group: scraper
@@ -17,7 +18,8 @@ concurrency:
 jobs:
   run-scraper:
     runs-on: ubuntu-latest
-
+    outputs:
+      site-path: ${{ steps.site-path.outputs.path }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -64,3 +66,28 @@ jobs:
           else
             echo "No changes to commit."
           fi
+
+      - id: site-path                # ← tell next job where the site files live
+        run: echo "path=feeds" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: run-scraper
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ needs.run-scraper.outputs.site-path }}  # uploads ./feeds
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
