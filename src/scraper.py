@@ -25,7 +25,7 @@ Schema:
   "location": "Civic Centre, WERRIBEE",
   "description_html": "<p>…</p>",
   "scrape_date": "2025-10-30T14:05:00+11:00",
-  "source_engine": "pageup|pulse_rcm|scout|generic"
+  "source_engine": "pageup|pulse_rcm|scout|applynow|recruitmenthub|generic"
 }
 """
 
@@ -128,16 +128,14 @@ class BaseAdapter:
         self.start_url = start_url
 
     def fetch(self) -> List[JobRecord]:
-        """Return list of JobRecord."""
         raise NotImplementedError
 
-# -------- Pulse Software (RCM) adapter (e.g., Ballarat) --------
+# -------- Pulse Software (RCM) --------
 
 class PulseRCMAdapter(BaseAdapter):
     engine_name = "pulse_rcm"
 
     def fetch(self) -> List[JobRecord]:
-        # WebServices root inference
         base = self.start_url.rstrip("/")
         if "/WebServices" in base:
             ws = base
@@ -168,7 +166,7 @@ class PulseRCMAdapter(BaseAdapter):
             posted = clean_text(info.get("PostedDate") or j.get("PostedDate"))
             close = clean_text(info.get("ClosingDate"))
             salary = clean_text(info.get("Compensation"))
-            band = find_first([r"(Band\s*\d+\w?)"], " ".join([title or "", salary or "", desc_html or ""]))
+            band = find_first([r"(?i)\bBand\s*\d+\w?\b"], " ".join([title or "", salary or "", desc_html or ""]))
             employment_type = clean_text(info.get("EmploymentType"))
             work_arrangement = clean_text(info.get("WorkArrangement"))
             location = clean_text(info.get("Location"))
@@ -190,7 +188,7 @@ class PulseRCMAdapter(BaseAdapter):
             ))
         return out
 
-# -------- PageUp People adapter (e.g., City of Greater Geelong) --------
+# -------- PageUp People --------
 
 class PageUpAdapter(BaseAdapter):
     engine_name = "pageup"
@@ -219,34 +217,28 @@ class PageUpAdapter(BaseAdapter):
             if href in links_seen:
                 continue
             links_seen.add(href)
-
             try:
                 jr = self._parse_job_page(href)
                 if jr:
                     jobs.append(jr)
             except Exception:
                 logging.exception("PageUp item failed: %s", href)
-
         return jobs
 
     def _parse_job_page(self, url: str) -> Optional[JobRecord]:
         r = get(url)
         soup = BeautifulSoup(r.text, "html.parser")
-        title = clean_text(
-            (soup.select_one("h1") or soup.select_one("h2") or soup.select_one(".job-title")).get_text(" ", strip=True)
-            if soup.select_one("h1, h2, .job-title") else None
-        )
-
+        title = clean_text((soup.select_one("h1,h2,.job-title") or {}).get_text(" ", strip=True)
+                           if soup.select_one("h1,h2,.job-title") else None)
         text = soup.get_text(" ", strip=True)
 
         salary = find_first([
             r"(?i)(?:Salary|Classification|Remuneration)\s*[:\-]\s*([^|•\n\r]+)",
             r"(?i)\bBand\s*\d+\w?\b[^|•\n\r]*"
         ], text)
-
         band = find_first([r"(?i)\bBand\s*\d+\w?\b"], text)
         posted = find_first([r"(?i)(?:Posted on|Advertised|Publication date)\s*[:\-]\s*([^\n\r]+)"], text)
-        closing = find_first([r"(?i)(?:Closes|Closing|Applications close)\s*[:\-]\s*([^\n\r]+)"], text)
+        closing = find_first([r"(?i)(?:Closes|Closing|Applications close)\s*[:\-]\*?\s*([^\n\r]+)"], text)
         employment_type = find_first([r"(?i)(?:Work type|Employment Type)\s*[:\-]\s*([^\n\r|•]+)"], text)
         location = find_first([r"(?i)(?:Location)\s*[:\-]\s*([^\n\r|•]+)"], text)
 
@@ -272,7 +264,7 @@ class PageUpAdapter(BaseAdapter):
             source_engine=self.engine_name
         )
 
-# -------- Scout/BigRedSky-ish adapter (e.g., centralgoldfieldscareers.com.au) --------
+# -------- Scout / BigRedSky / Mercury --------
 
 class ScoutAdapter(BaseAdapter):
     engine_name = "scout"
@@ -300,10 +292,9 @@ class ScoutAdapter(BaseAdapter):
     def _parse(self, url: str) -> JobRecord:
         r = get(url)
         soup = BeautifulSoup(r.text, "html.parser")
-        title = clean_text(soup.select_one("h1, h2, .job-title").get_text(" ", strip=True)
-                           if soup.select_one("h1, h2, .job-title") else None)
+        title = clean_text(soup.select_one("h1,h2,.job-title").get_text(" ", strip=True)
+                           if soup.select_one("h1,h2,.job-title") else None)
         text = soup.get_text(" ", strip=True)
-
         closing = find_first([r"(?i)Closing\s*(?:Date)?\s*[:\-]\s*([^\n\r]+)"], text)
         posted = find_first([r"(?i)(?:Posted|Advertised)\s*[:\-]\s*([^\n\r]+)"], text)
         salary = find_first([r"(?i)(?:Salary|Remuneration)\s*[:\-]\s*([^\n\r]+)"], text)
@@ -330,29 +321,152 @@ class ScoutAdapter(BaseAdapter):
             source_engine=self.engine_name
         )
 
-# -------- Generic HTML fallback --------
+# -------- ApplyNow (Job Giant) --------
+
+class ApplyNowAdapter(BaseAdapter):
+    engine_name = "applynow"
+
+    def fetch(self) -> List[JobRecord]:
+        r = get(self.start_url)
+        soup = BeautifulSoup(r.text, "lxml")
+        # listing cards are anchors to /applyjob/<id> or /jobs/…/<slug>
+        anchors = soup.select("a[href*='/applyjob/'], a[href*='/jobs/']")
+        links = []
+        for a in anchors:
+            href = urljoin(self.start_url, a.get("href"))
+            # heuristic: detail pages contain /jobs/<...> or /applyjob/<id> with numeric id
+            if re.search(r"/applyjob/\d+|/jobs/", href) and href not in links:
+                links.append(href)
+
+        jobs: List[JobRecord] = []
+        seen = set()
+        for href in links:
+            # prefer non-apply URLs for richer content if both exist
+            if "/applyjob/" in href:
+                key = href.replace("/applyjob/", "/jobs/")
+            else:
+                key = href
+            if key in seen:
+                continue
+            seen.add(key)
+
+            try:
+                jobs.append(self._parse_detail(href))
+            except Exception:
+                logging.exception("ApplyNow parse failed: %s", href)
+        return jobs
+
+    def _parse_detail(self, url: str) -> JobRecord:
+        r = get(url)
+        soup = BeautifulSoup(r.text, "lxml")
+        title = clean_text((soup.select_one("h1,h2,.job-title") or {}).get_text(" ", strip=True)
+                           if soup.select_one("h1,h2,.job-title") else None)
+        text = soup.get_text(" ", strip=True)
+        posted = find_first([r"(?i)(Advertised|Posted)\s*[:\-]\s*([^\n\r]+)"], text)
+        closing = find_first([r"(?i)(Closes|Closing)\s*[:\-]\s*([^\n\r]+)"], text)
+        salary = find_first([r"(?i)(?:Salary|Remuneration)\s*[:\-]\s*([^\n\r]+)"], text)
+        band = find_first([r"(?i)\bBand\s*\d+\w?\b"], text)
+        employment_type = find_first([r"(?i)(?:Employment Type|Work Type)\s*[:\-]\s*([^\n\r]+)"], text)
+        location = find_first([r"(?i)(?:Location)\s*[:\-]\s*([^\n\r]+)"], text)
+        main = soup.select_one("#content, .content, main, .job, article") or soup
+        desc_html = html_of(main)
+
+        return JobRecord(
+            council=self.council_name,
+            title=title or "(untitled)",
+            link=url,
+            posted_date=to_date_iso(posted),
+            closing_date=to_date_iso(closing),
+            salary=clean_text(salary),
+            band=clean_text(band),
+            employment_type=clean_text(employment_type),
+            work_arrangement=None,
+            location=clean_text(location),
+            description_html=desc_html,
+            scrape_date=now_iso(),
+            source_engine=self.engine_name
+        )
+
+# -------- RecruitmentHub / Talent Propeller --------
+
+class RecruitmentHubAdapter(BaseAdapter):
+    engine_name = "recruitmenthub"
+
+    def fetch(self) -> List[JobRecord]:
+        r = get(self.start_url)
+        soup = BeautifulSoup(r.text, "lxml")
+        # cards link to /Vacancies/<id>/title/<slug> or similar
+        anchors = soup.select("a[href*='/Vacancies/']")
+        links: List[str] = []
+        for a in anchors:
+            href = urljoin(self.start_url, a.get("href"))
+            if re.search(r"/Vacancies/\d+/", href) and href not in links:
+                links.append(href)
+
+        jobs: List[JobRecord] = []
+        for href in links:
+            try:
+                jobs.append(self._parse_detail(href))
+            except Exception:
+                logging.exception("RecruitmentHub parse failed: %s", href)
+        return jobs
+
+    def _parse_detail(self, url: str) -> JobRecord:
+        r = get(url)
+        soup = BeautifulSoup(r.text, "lxml")
+        title = clean_text((soup.select_one("h1,h2,.job-title") or {}).get_text(" ", strip=True)
+                           if soup.select_one("h1,h2,.job-title") else None)
+        text = soup.get_text(" ", strip=True)
+        posted = find_first([r"(?i)(Posted|Advertised)\s*[:\-]\s*([^\n\r]+)"], text)
+        closing = find_first([r"(?i)(Closes|Closing)\s*[:\-]\s*([^\n\r]+)"], text)
+        salary = find_first([r"(?i)(?:Salary|Remuneration)\s*[:\-]\s*([^\n\r]+)"], text)
+        band = find_first([r"(?i)\bBand\s*\d+\w?\b"], text)
+        employment_type = find_first([r"(?i)(?:Employment Type|Work Type)\s*[:\-]\s*([^\n\r]+)"], text)
+        location = find_first([r"(?i)(?:Location)\s*[:\-]\s*([^\n\r]+)"], text)
+        main = soup.select_one("#content, .content, main, .job, article") or soup
+        desc_html = html_of(main)
+
+        return JobRecord(
+            council=self.council_name,
+            title=title or "(untitled)",
+            link=url,
+            posted_date=to_date_iso(posted),
+            closing_date=to_date_iso(closing),
+            salary=clean_text(salary),
+            band=clean_text(band),
+            employment_type=clean_text(employment_type),
+            work_arrangement=None,
+            location=clean_text(location),
+            description_html=desc_html,
+            scrape_date=now_iso(),
+            source_engine=self.engine_name
+        )
+
+# -------- Hardened Generic HTML Fallback --------
 
 class GenericHTMLAdapter(BaseAdapter):
     engine_name = "generic"
 
     def fetch(self) -> List[JobRecord]:
         r = get(self.start_url)
-        soup = BeautifulSoup(r.text, "html.parser")
+        soup = BeautifulSoup(r.text, "lxml")
         anchors = soup.select("a[href]")
         jobs: List[JobRecord] = []
         seen = set()
         for a in anchors:
-            href = urljoin(self.start_url, a.get("href"))
+            href = urljoin(self.start_url, a.get("href") or "")
             if href in seen:
                 continue
             seen.add(href)
 
-            # Only follow likely job detail links
-            if not re.search(r"/job|/vacanc|/careers|/employment|/opportun", href, flags=re.I):
+            # follow likely job detail links
+            if not re.search(r"/(job|vacanc|opportunit|positions?|careers?/[^#]*\d)", href, flags=re.I):
                 continue
-
-            # Skip obvious noise (profiles, sitemap, help etc.)
-            if re.search(r"/(mysubmissions|profile|sitemap|info/help)\b", href, flags=re.I):
+            # skip obvious listing/system pages
+            if re.search(r"/(mysubmissions|profile|sitemap|info/help|help|site-?map)\b", href, flags=re.I):
+                continue
+            # skip pure listing pages (no digits)
+            if re.search(r"/(careers|employment|vacancies|jobs)(/|$)", href, flags=re.I) and not re.search(r"\d", href):
                 continue
 
             try:
@@ -360,13 +474,12 @@ class GenericHTMLAdapter(BaseAdapter):
                 if jr:
                     jobs.append(jr)
             except Exception:
-                # soft-fail
                 pass
         return jobs
 
     def _parse_detail(self, url: str) -> Optional[JobRecord]:
         r = get(url)
-        soup = BeautifulSoup(r.text, "html.parser")
+        soup = BeautifulSoup(r.text, "lxml")
         title_node = soup.select_one("h1, h2, .title, .job-title")
         if not title_node:
             return None
@@ -396,25 +509,29 @@ class GenericHTMLAdapter(BaseAdapter):
             source_engine=self.engine_name
         )
 
-# -------- Adapter router --------
+# -------- Adapter Router --------
 
 def pick_adapter(council_name: str, url: str) -> BaseAdapter:
     host = urlparse(url).netloc.lower()
+    path = urlparse(url).path.lower()
 
     if "pulsesoftware.com" in host:
         return PulseRCMAdapter(council_name, url)
     if "careers.pageuppeople.com" in host:
         return PageUpAdapter(council_name, url)
-    if "scouttalent" in host or "bigredsky" in host or "mercury" in host:
-        return ScoutAdapter(council_name, url)
     if "centralgoldfieldscareers.com.au" in host:
         return ScoutAdapter(council_name, url)
-    # Wyndham’s recruitment domain (PageUp-themed UI), treat as generic detail crawler
+    if "scouttalent" in host or "bigredsky" in host or "mercury" in host:
+        return ScoutAdapter(council_name, url)
+    if "applynow.net.au" in host:
+        return ApplyNowAdapter(council_name, url)
+    if "recruitmenthub.com.au" in host or "talentpropellerjobs.com" in host:
+        return RecruitmentHubAdapter(council_name, url)
     if "recruitment.wyndham.vic.gov.au" in host:
         return GenericHTMLAdapter(council_name, url)
     return GenericHTMLAdapter(council_name, url)
 
-# -------- Default councils (fallback if no registry passed) --------
+# -------- Default councils (fallback) --------
 
 DEFAULT_COUNCILS = [
     ("City of Ballarat", "https://ballarat.pulsesoftware.com/Pulse/jobs"),
@@ -426,29 +543,19 @@ DEFAULT_COUNCILS = [
 
 def load_registry(path: str) -> List[Tuple[str, str]]:
     """
-    Accepts either:
-      A) YAML:
-         version: 1
-         councils:
-           - name: ...
-             active: true
-             starts: [url1, url2, ...]
-           - ...
-      B) JSON (legacy):
-         [{"name": "...", "url": "..."}, ...]
-    Returns: List[(council_name, start_url)]
+    Accepts:
+      YAML: { version, councils: [ {name, active, starts: [...]} ] }
+      JSON: [ {name, url} ]  (legacy)
+    Returns List[(council_name, start_url)]
     """
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"Registry not found: {path}")
-
     text = p.read_text(encoding="utf-8")
-
     data: Any = None
-    # Prefer YAML based on extension; otherwise try JSON then YAML
     if p.suffix.lower() in {".yaml", ".yml"}:
         try:
-            import yaml  # requires PyYAML
+            import yaml
         except Exception as e:
             raise RuntimeError("PyYAML not installed. Add 'PyYAML' to requirements.txt.") from e
         data = yaml.safe_load(text)
@@ -456,15 +563,10 @@ def load_registry(path: str) -> List[Tuple[str, str]]:
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
-            try:
-                import yaml
-            except Exception as e:
-                raise RuntimeError("Registry is not valid JSON and PyYAML is not installed.") from e
+            import yaml
             data = yaml.safe_load(text)
 
     out: List[Tuple[str, str]] = []
-
-    # YAML dict schema
     if isinstance(data, dict) and "councils" in data:
         for row in data.get("councils") or []:
             if not row:
@@ -480,7 +582,6 @@ def load_registry(path: str) -> List[Tuple[str, str]]:
                     out.append((name, u))
         return out
 
-    # Legacy JSON list schema
     if isinstance(data, list):
         for row in data:
             if not row:
@@ -502,6 +603,7 @@ def scrape_all(councils: List[Tuple[str, str]], inter_council_delay: float = 0.0
             adapter = pick_adapter(name, url)
             logging.info("(%02d/%02d) %s via %s :: %s", idx, len(councils), name, adapter.engine_name, url)
             jobs = adapter.fetch()
+            logging.info("Scraped %d jobs from %s", len(jobs), name)
             all_jobs.extend(jobs)
         except Exception:
             logging.exception("Failed council: %s (%s)", name, url)
@@ -534,18 +636,13 @@ def main():
         format="%(asctime)s %(levelname)s %(message)s"
     )
 
-    if args.councils:
-        councils = load_registry(args.councils)
-    else:
-        councils = DEFAULT_COUNCILS
-
+    councils = load_registry(args.councils) if args.councils else DEFAULT_COUNCILS
     logging.info("Loaded %d council start URLs", len(councils))
     for n, (nm, u) in enumerate(councils[:10], 1):
         logging.debug(" [%02d] %s -> %s", n, nm, u)
 
     jobs = scrape_all(councils, inter_council_delay=args.delay)
 
-    # Write JSONL
     if args.out in ("-", "", None):
         sink = sys.stdout
         close_after = False
@@ -556,8 +653,7 @@ def main():
 
     try:
         for j in jobs:
-            obj = asdict(j)
-            sink.write(json.dumps(obj, ensure_ascii=False) + "\n")
+            sink.write(json.dumps(asdict(j), ensure_ascii=False) + "\n")
     finally:
         if close_after:
             sink.close()
