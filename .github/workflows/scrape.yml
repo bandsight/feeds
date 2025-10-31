@@ -1,4 +1,4 @@
-name: Scrape council jobs
+name: Scrape + Deploy Pages
 
 on:
   workflow_dispatch: {}
@@ -7,37 +7,37 @@ on:
 
 permissions:
   contents: write
-  actions: read
-  pages: write            # ← ADD
-  id-token: write         # ← ADD
+  pages: write           # << required for deploy-pages
+  id-token: write        # << required for OIDC
 
 concurrency:
-  group: scraper
-  cancel-in-progress: false
+  group: pages
+  cancel-in-progress: true
 
 jobs:
-  run-scraper:
+  scrape:
     runs-on: ubuntu-latest
     outputs:
-      site-path: ${{ steps.site-path.outputs.path }}
+      artifact-path: ${{ steps.out.outputs.path }}
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install dependencies
+      - name: Install deps
         run: pip install -r requirements.txt
 
-      - name: Ensure data/ dirs exist
+      - name: Ensure dirs
         run: |
           mkdir -p data feeds
+          touch feeds/.nojekyll
 
       - name: Run scraper
         run: |
@@ -49,45 +49,40 @@ jobs:
             --log INFO
 
       - name: Build feeds
+        # If you don't have a builder, you can skip this and just rely on scraper output,
+        # but assuming you *do* write/refresh feeds/feed.xml here:
         run: |
           python src/feeds_site_builder.py \
             --in data/jobs_history.jsonl \
-            --out feeds/feed.xml \
-            --days 45
+            --out feeds/feed.xml
 
-      - name: Commit & push if changed
+      - name: Commit updated artifacts (optional)
         run: |
-          git config user.name "github-actions[bot]"
+          git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           if ! git diff --cached --quiet; then
-            git commit -m "chore(scraper): update jobs_history and feed [skip ci]"
+            git commit -m "chore: update jobs and feed"
             git push
-          else
-            echo "No changes to commit."
           fi
 
-      - id: site-path                # ← tell next job where the site files live
-        run: echo "path=feeds" >> "$GITHUB_OUTPUT"
+      - name: Set output path
+        id: out
+        run: echo "path=." >> "$GITHUB_OUTPUT"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Publish the whole repository tree so /feeds/feed.xml is included
+          path: ${{ steps.out.outputs.path }}
 
   deploy:
-    needs: run-scraper
+    needs: scrape
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload site artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ${{ needs.run-scraper.outputs.site-path }}  # uploads ./feeds
-
       - name: Deploy to GitHub Pages
-        id: deployment
+        id: deploy
         uses: actions/deploy-pages@v4
