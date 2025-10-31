@@ -2,6 +2,7 @@
 # Exclude: Borough of Queenscliffe, City of Melbourne
 version: 1
 councils:
+  # —— your originals (unchanged) ——
   - name: Wyndham City
     lga_code: 361
     vendor: generic
@@ -18,7 +19,7 @@ councils:
 
   - name: Central Goldfields Shire
     lga_code: 214
-    vendor: generic
+    vendor: scout
     starts:
       - https://centralgoldfieldscareers.com.au/Vacancies/
     active: true
@@ -28,4 +29,101 @@ councils:
     vendor: pulse
     starts:
       - https://ballarat.pulsesoftware.com/Pulse/jobs
+    active: true
+
+  # —— additions (~16 more) ——
+  - name: Golden Plains Shire
+    vendor: generic
+    starts:
+      - https://www.goldenplains.vic.gov.au/council/careers/vacancies
+    active: true
+
+  - name: Moorabool Shire
+    vendor: generic
+    starts:
+      - https://www.moorabool.vic.gov.au/About-Council/Careers/Vacancies
+    active: true
+
+  - name: Hepburn Shire
+    vendor: generic
+    starts:
+      - https://www.hepburn.vic.gov.au/Council/Work-for-Council/Job-vacancies
+    active: true
+
+  - name: Pyrenees Shire
+    vendor: generic
+    starts:
+      - https://www.pyrenees.vic.gov.au/About-Pyrenees-Shire-Council/Work-For-Pyrenees-Shire-Council/Employment-Opportunities-with-Pyrenees-Shire-Council
+    active: true
+
+  - name: Ararat Rural City
+    vendor: generic
+    starts:
+      - https://www.ararat.vic.gov.au/careers
+    active: true
+
+  - name: Northern Grampians Shire
+    vendor: generic
+    starts:
+      - https://www.ngshire.vic.gov.au/Careers/Current-vacancies
+    active: true
+
+  - name: Mount Alexander Shire
+    vendor: generic
+    starts:
+      - https://www.mountalexander.vic.gov.au/Council/Work-with-us/Current-vacancies
+    active: true
+
+  - name: Shire of Campaspe
+    vendor: generic
+    starts:
+      - https://www.campaspe.vic.gov.au/Our-council/Employment-tenders/Careers
+    active: true
+
+  - name: Colac Otway Shire
+    vendor: generic
+    starts:
+      - https://www.colacotway.vic.gov.au/Council-the-shire/Careers/Current-Opportunities
+    active: true
+
+  - name: Corangamite Shire
+    vendor: generic
+    starts:
+      - https://www.corangamite.vic.gov.au/Council/Working-for-council
+    active: true
+
+  - name: Glenelg Shire
+    vendor: generic
+    starts:
+      - https://www.glenelg.vic.gov.au/Our-Council/Employment-opportunities/Current-vacancies
+    active: true
+
+  - name: Surf Coast Shire
+    vendor: generic
+    starts:
+      - https://www.surfcoast.vic.gov.au/About-us/Working-with-us/Employment
+    active: true
+
+  - name: City of Greater Bendigo
+    vendor: generic
+    starts:
+      - https://www.bendigo.vic.gov.au/about-us/working-city
+    active: true
+
+  - name: Macedon Ranges Shire
+    vendor: applynow
+    starts:
+      - https://macedon-ranges-ext-shire-portal.applynow.net.au/
+    active: true
+
+  - name: Mitchell Shire
+    vendor: generic
+    starts:
+      - https://www.mitchellshire.vic.gov.au/council/careers/current-vacancies
+    active: true
+
+  - name: Horsham Rural City
+    vendor: talentpropeller
+    starts:
+      - https://hrcc.recruitmenthub.com.au/Vacancies/
     active: true
