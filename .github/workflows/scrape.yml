@@ -1,4 +1,5 @@
-name: Scrape + Deploy Pages
+# .github/workflows/scrape.yml
+name: Scrape council jobs
 
 on:
   workflow_dispatch: {}
@@ -7,37 +8,31 @@ on:
 
 permissions:
   contents: write
-  pages: write           # << required for deploy-pages
-  id-token: write        # << required for OIDC
+  actions: read
 
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: scraper
+  cancel-in-progress: false
 
 jobs:
-  scrape:
+  run-scraper:
     runs-on: ubuntu-latest
-    outputs:
-      artifact-path: ${{ steps.out.outputs.path }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install deps
+      - name: Install dependencies
         run: pip install -r requirements.txt
 
       - name: Ensure dirs
         run: |
-          mkdir -p data feeds
-          touch feeds/.nojekyll
+          mkdir -p data feeds docs/feeds
+          touch docs/.nojekyll
 
       - name: Run scraper
         run: |
@@ -49,40 +44,25 @@ jobs:
             --log INFO
 
       - name: Build feeds
-        # If you don't have a builder, you can skip this and just rely on scraper output,
-        # but assuming you *do* write/refresh feeds/feed.xml here:
+        if: ${{ hashFiles('src/feeds_site_builder.py') != '' }}
         run: |
           python src/feeds_site_builder.py \
             --in data/jobs_history.jsonl \
             --out feeds/feed.xml
 
-      - name: Commit updated artifacts (optional)
+      - name: Publish feed to /docs for Pages
         run: |
-          git config user.name  "github-actions[bot]"
+          mkdir -p docs/feeds
+          cp -f feeds/feed.xml docs/feeds/feed.xml
+
+      - name: Commit & push if changed
+        run: |
+          git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           if ! git diff --cached --quiet; then
-            git commit -m "chore: update jobs and feed"
+            git commit -m "chore: update feeds/feed.xml for Pages [skip ci]"
             git push
+          else
+            echo "No changes to commit."
           fi
-
-      - name: Set output path
-        id: out
-        run: echo "path=." >> "$GITHUB_OUTPUT"
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          # Publish the whole repository tree so /feeds/feed.xml is included
-          path: ${{ steps.out.outputs.path }}
-
-  deploy:
-    needs: scrape
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deploy
-        uses: actions/deploy-pages@v4
