@@ -3,7 +3,7 @@ name: Scrape council jobs
 on:
   workflow_dispatch: {}
   schedule:
-    # Every 6 hours. CRON is UTC. (Melbourne = UTC+11 on Oct 31, 2025.)
+    # Every 6 hours. CRON uses UTC (AUS/Melbourne is UTC+11 on Oct 31, 2025).
     - cron: "0 */6 * * *"
 
 permissions:
@@ -17,6 +17,7 @@ concurrency:
 jobs:
   run-scraper:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -29,19 +30,14 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Upgrade pip and install dependencies
-        run: |
-          python -m pip install --upgrade pip wheel
-          pip install -r requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
       - name: Ensure data/ dirs exist
-        run: mkdir -p data feeds
-
-      - name: Verify councils registry exists
         run: |
-          test -f data/councils.yaml || (echo "data/councils.yaml not found" && exit 1)
+          mkdir -p data feeds
 
-      - name: Run scraper (append mode)
+      - name: Run scraper
         run: |
           python src/scraper.py \
             --councils data/councils.yaml \
@@ -50,29 +46,12 @@ jobs:
             --delay 0.3 \
             --log INFO
 
-      - name: Show record count
-        run: |
-          echo "Total rows in jobs_history.jsonl:"
-          wc -l data/jobs_history.jsonl || true
-          echo "Recent tail:"
-          tail -n 5 data/jobs_history.jsonl || true
-
-      - name: Build feeds (optional)
-        if: ${{ hashFiles('src/feeds_site_builder.py') != '' && hashFiles('data/jobs_history.jsonl') != '' }}
+      - name: Build feeds
         run: |
           python src/feeds_site_builder.py \
             --in data/jobs_history.jsonl \
-            --out feeds/feed.xml
-
-      - name: Upload artifacts (jobs + feed)
-        uses: actions/upload-artifact@v4
-        with:
-          name: scraper-output
-          path: |
-            data/jobs_history.jsonl
-            feeds/feed.xml
-          if-no-files-found: warn
-          retention-days: 10
+            --out feeds/feed.xml \
+            --days 45
 
       - name: Commit & push if changed
         run: |
