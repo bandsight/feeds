@@ -1,136 +1,133 @@
-# Master council registry — Version 2
+# Master council registry — Version 1
 # Exclude: Borough of Queenscliffe, City of Melbourne
 version: 1
 councils:
   - name: City of Ballarat
+    lga_code: 201
     vendor: pulse
     starts:
       - https://ballarat.pulsesoftware.com/Pulse/jobs
     active: true
 
   - name: City of Greater Geelong
+    lga_code: 210
     vendor: pageup
     starts:
       - https://careers.pageuppeople.com/887/cw/en/listing/
-    active: true  # Verified listing page. :contentReference[oaicite:0]{index=0}
+    active: true
 
-  - name: City of Greater Bendigo
-    vendor: generic
+  - name: Central Goldfields Shire
+    lga_code: 214
+    vendor: scout
     starts:
-      - https://www.bendigo.vic.gov.au/about-us/working-city
-    active: true  # In-house listing. :contentReference[oaicite:1]{index=1}
+      - https://centralgoldfieldscareers.com.au/Vacancies/
+    active: true
 
   - name: Wyndham City
+    lga_code: 361
     vendor: generic
     starts:
       - https://recruitment.wyndham.vic.gov.au/careers/latest-jobs
-    active: true  # In-house careers hub. (Works with your GenericHTMLAdapter.)
+    active: true
 
   - name: Golden Plains Shire
     vendor: generic
     starts:
       - https://www.goldenplains.vic.gov.au/council/about-council/careers
-    active: true  # Careers landing page. :contentReference[oaicite:2]{index=2}
+    active: true
 
   - name: Moorabool Shire
     vendor: generic
     starts:
       - https://www.moorabool.vic.gov.au/About-Council/Careers
-    active: true  # Careers page. :contentReference[oaicite:3]{index=3}
+    active: true
 
   - name: Hepburn Shire
     vendor: generic
     starts:
       - https://www.hepburn.vic.gov.au/work-with-us/current-vacancies
-    active: true  # Current vacancies page. :contentReference[oaicite:4]{index=4}
-
-  - name: Central Goldfields Shire
-    vendor: scout
-    starts:
-      - https://centralgoldfieldscareers.com.au/Vacancies/
-    active: true  # Scout/BigRedSky style. :contentReference[oaicite:5]{index=5}
+    active: true
 
   - name: Pyrenees Shire
     vendor: generic
     starts:
       - https://www.pyrenees.vic.gov.au/Your-Council/Careers/Current-vacancies
-    active: true  # Current vacancies page. :contentReference[oaicite:6]{index=6}
+    active: true
 
   - name: Ararat Rural City
     vendor: generic
     starts:
       - https://www.ararat.vic.gov.au/council/careers/jobs-ararat-rural-city
-    active: true  # Careers/jobs page. :contentReference[oaicite:7]{index=7}
+    active: true
 
   - name: Northern Grampians Shire
     vendor: generic
     starts:
       - https://www.ngshire.vic.gov.au/Careers/Working-at-Northern-Grampians-Shire-Council
-    active: true  # Careers landing (links to jobs). :contentReference[oaicite:8]{index=8}
+    active: true
 
   - name: Mount Alexander Shire
     vendor: generic
     starts:
       - https://www.mountalexander.vic.gov.au/Council/Work-with-us/Current-vacancies
-    active: true  # “Current vacancies”. :contentReference[oaicite:9]{index=9}
+    active: true
 
   - name: Macedon Ranges Shire
-    vendor: generic
+    vendor: applynow
     starts:
       - https://macedon-ranges-ext-shire-portal.applynow.net.au/
-    active: true  # ApplyNow portal. :contentReference[oaicite:10]{index=10}
+    active: true
 
   - name: Mitchell Shire
     vendor: pageup
     starts:
-      - https://www.mitchellshire.vic.gov.au/council/careers/current-vacancies
       - https://careers.pageuppeople.com/838/cw/en/listing/
-    active: true  # Council page + PageUp backend. :contentReference[oaicite:11]{index=11}
+    active: true
 
   - name: Horsham Rural City
-    vendor: generic
+    vendor: recruitmenthub
     starts:
       - https://hrcc.recruitmenthub.com.au/Vacancies/
-    active: true  # Talent Propeller (RecruitmentHub). :contentReference[oaicite:12]{index=12}
+    active: true
 
   - name: Southern Grampians Shire
     vendor: generic
     starts:
       - https://www.sthgrampians.vic.gov.au/Careers
-    active: true  # Council vacancies page. :contentReference[oaicite:13]{index=13}
+    active: true
 
   - name: Warrnambool City
     vendor: generic
     starts:
       - https://www.warrnambool.vic.gov.au/careers
-    active: true  # Careers hub. :contentReference[oaicite:14]{index=14}
+    active: true
 
   - name: Glenelg Shire
     vendor: generic
     starts:
       - https://www.glenelg.vic.gov.au/Our-Council/Employment-opportunities/Current-vacancies
-    active: true  # Current vacancies. :contentReference[oaicite:15]{index=15}
+    active: true
 
   - name: Colac Otway Shire
     vendor: generic
     starts:
       - https://www.colacotway.vic.gov.au/Council-the-shire/Careers/Current-Opportunities
-    active: true  # Current opportunities. :contentReference[oaicite:16]{index=16}
+    active: true
 
   - name: Corangamite Shire
     vendor: generic
     starts:
       - https://www.corangamite.vic.gov.au/Council/Working-for-council
-    active: true  # “Current Vacancies” section. :contentReference[oaicite:17]{index=17}
+    active: true
 
   - name: Surf Coast Shire
     vendor: generic
     starts:
       - https://www.surfcoast.vic.gov.au/About-us/Working-with-us/Employment
-    active: true  # Employment page with vacancies. :contentReference[oaicite:18]{index=18}
+    active: true
 
   - name: Greater Shepparton City
     vendor: generic
     starts:
       - https://greatershepparton.com.au/council/employment
-    active: true  # In-house jobs listing. :contentReference[oaicite:19]{index=19}
+    active: true
