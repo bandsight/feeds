@@ -3,11 +3,11 @@ name: Scrape council jobs
 on:
   workflow_dispatch: {}
   schedule:
-    # Every 6 hours. CRON is UTC (AUS/Melbourne is UTC+11 on Oct 31, 2025).
+    # Every 6 hours. CRON is UTC. (Melbourne = UTC+11 on Oct 31, 2025.)
     - cron: "0 */6 * * *"
 
 permissions:
-  contents: write  # needed to push changes
+  contents: write
   actions: read
 
 concurrency:
@@ -17,7 +17,6 @@ concurrency:
 jobs:
   run-scraper:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -30,15 +29,19 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Upgrade pip and install dependencies
+        run: |
+          python -m pip install --upgrade pip wheel
+          pip install -r requirements.txt
 
       - name: Ensure data/ dirs exist
-        run: |
-          mkdir -p data feeds
+        run: mkdir -p data feeds
 
-      # Run your scraper in append mode so history grows over time.
-      - name: Run scraper
+      - name: Verify councils registry exists
+        run: |
+          test -f data/councils.yaml || (echo "data/councils.yaml not found" && exit 1)
+
+      - name: Run scraper (append mode)
         run: |
           python src/scraper.py \
             --councils data/councils.yaml \
@@ -47,14 +50,29 @@ jobs:
             --delay 0.3 \
             --log INFO
 
-      # OPTIONAL: rebuild RSS/Atom feed from jobs_history.jsonl
-      # (Skip or adjust if you don't have this script yet)
+      - name: Show record count
+        run: |
+          echo "Total rows in jobs_history.jsonl:"
+          wc -l data/jobs_history.jsonl || true
+          echo "Recent tail:"
+          tail -n 5 data/jobs_history.jsonl || true
+
       - name: Build feeds (optional)
-        if: ${{ hashFiles('src/feeds_site_builder.py') != '' }}
+        if: ${{ hashFiles('src/feeds_site_builder.py') != '' && hashFiles('data/jobs_history.jsonl') != '' }}
         run: |
           python src/feeds_site_builder.py \
             --in data/jobs_history.jsonl \
             --out feeds/feed.xml
+
+      - name: Upload artifacts (jobs + feed)
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraper-output
+          path: |
+            data/jobs_history.jsonl
+            feeds/feed.xml
+          if-no-files-found: warn
+          retention-days: 10
 
       - name: Commit & push if changed
         run: |
